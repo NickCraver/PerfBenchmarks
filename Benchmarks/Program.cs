@@ -8,6 +8,8 @@ namespace Benchmarks
     {
         static void Main(string[] args)
         {
+            //BenchmarkRunner.Run<TrimTests>();
+            //BenchmarkRunner.Run<TimeSpanTests>();
             BenchmarkRunner.Run<ForeachTests>();
         }
     }
