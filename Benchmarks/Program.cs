@@ -1,5 +1,5 @@
 ﻿using BenchmarkDotNet.Configs;
-using BenchmarkDotNet.Diagnostics.Windows;
+using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Running;
 
 namespace Benchmarks
@@ -10,7 +10,8 @@ namespace Benchmarks
         {
             //BenchmarkRunner.Run<TrimTests>();
             //BenchmarkRunner.Run<TimeSpanTests>();
-            BenchmarkRunner.Run<ForeachTests>();
+            //BenchmarkRunner.Run<JSONTests>();
+            BenchmarkRunner.Run<ConditionalTests>();
         }
     }
 
@@ -18,7 +19,7 @@ namespace Benchmarks
     {
         public Config()
         {
-            //Add(new MemoryDiagnoser());
+            Add(new MemoryDiagnoser());
             //Add(new InliningDiagnoser());
         }
     }
