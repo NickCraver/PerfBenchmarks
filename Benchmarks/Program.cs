@@ -19,7 +19,7 @@ namespace Benchmarks
     {
         public Config()
         {
-            Add(new MemoryDiagnoser());
+            //Add(new MemoryDiagnoser());
             //Add(new InliningDiagnoser());
         }
     }
