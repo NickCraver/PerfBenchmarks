@@ -14,7 +14,7 @@ namespace Benchmarks
         
         static void Main(string[] args)
         {
-            var benchmarks = Assembly.GetCallingAssembly()
+            var benchmarks = Assembly.GetEntryAssembly()
                 .DefinedTypes.Where(t => t.Name.EndsWith(BenchmarkSuffix))
                 .ToDictionary(t => t.Name.Substring(0, t.Name.Length - BenchmarkSuffix.Length), t => t, StringComparer.OrdinalIgnoreCase);
 
