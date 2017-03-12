@@ -7,8 +7,8 @@ namespace Benchmarks
     [Config(typeof(Config))]
     public class ConditionalTests
     {
-        private readonly List<string> _noItems = null;
-        private readonly List<string> _items = Enumerable.Range(0, 50000).Select(i => "Num" + i).ToList();
+        private List<string> _noItems = null;
+        private List<string> _items = Enumerable.Range(0, 50000).Select(i => "Num" + i).ToList();
 
         [Benchmark]
         public bool NullCheckItems() => _items != null && _items.Count > 0;
