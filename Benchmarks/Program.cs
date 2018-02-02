@@ -2,17 +2,16 @@
 using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Running;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 
 namespace Benchmarks
 {
-    class Program
+    public static class Program
     {
-        const string BenchmarkSuffix = "Tests";
-        
-        static void Main(string[] args)
+        private const string BenchmarkSuffix = "Tests";
+
+        public static void Main(string[] args)
         {
             var benchmarks = Assembly.GetEntryAssembly()
                 .DefinedTypes.Where(t => t.Name.EndsWith(BenchmarkSuffix))
@@ -42,9 +41,7 @@ namespace Benchmarks
         }
     }
 
-
-
-    class Config : ManualConfig
+    internal class Config : ManualConfig
     {
         public Config()
         {
