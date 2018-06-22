@@ -5,3 +5,4 @@ packages/
 Benchmarks/TraceEvent.ReadMe.txt
 Benchmarks/TraceEvent.ReleaseNotes.txt
 Benchmarks/_TraceEventProgrammersGuide.docx
+BenchmarkDotNet.Artifacts/
