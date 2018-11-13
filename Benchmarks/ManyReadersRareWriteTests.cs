@@ -34,7 +34,7 @@ namespace Benchmarks
         const int WriteEvery = NumberOfReads / Writes; 
 
 
-        [Setup]
+        [GlobalSetup]
         public void Setup()
         {
             for(int i = 0; i < Items;i++)

@@ -17,7 +17,7 @@ namespace Benchmarks
         private LittleClass[] _array;
         private const int Iterations = 100000;
 
-        [Setup]
+        [GlobalSetup]
         public void Setup()
         {
             _dictionary = new Dictionary<int, LittleClass>();
