@@ -52,7 +52,7 @@ namespace Benchmarks
         }
 
         // Sanity + Replace
-        [Benchmark(Description = "Sanity+hReplace: ContainsShort")]
+        [Benchmark(Description = "Sanity+Replace: ContainsShort")]
         public string SanityReplaceContainsShort() => SanityReplace(DoesContainShort);
         [Benchmark(Description = "Sanity+Replace: ContainsLong")]
         public string SanityReplaceContainsLong() => SanityReplace(DoesContainLong);
