@@ -89,7 +89,7 @@ namespace Benchmarks
         public string ReplaceEvalContainsLong() => ReplaceEval(DoesContainLong);
         [Benchmark(Description = "ReplaceEval: NoContainsShort")]
         public string ReplaceEvalNoContainsShort() => ReplaceEval(DoesntContainShort);
-        [Benchmark(Description = "EeplaceEval: NoContainsLong")]
+        [Benchmark(Description = "ReplaceEval: NoContainsLong")]
         public string ReplaceEvalNoContainsLong() => ReplaceEval(DoesntContainLong);
 
         private string ReplaceEval(string safeHtml) => _amazonLink.Replace(safeHtml, _amazonReplaceEvaluator);
