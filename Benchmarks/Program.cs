@@ -1,5 +1,6 @@
 ﻿using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
+using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
 using System;
 using System.Linq;
@@ -36,8 +37,6 @@ namespace Benchmarks
             }
 
             BenchmarkRunner.Run(benchmarks[args[0]]);
-
-            Console.Read();
         }
     }
 
@@ -46,6 +45,8 @@ namespace Benchmarks
         public Config()
         {
             Add(new MemoryDiagnoser());
+            Add(Job.Clr);
+            Add(Job.Core);
             //Add(new InliningDiagnoser());
         }
     }
