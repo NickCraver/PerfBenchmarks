@@ -1,10 +1,6 @@
 ﻿using BenchmarkDotNet.Attributes;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 namespace Benchmarks
 {
@@ -16,6 +12,7 @@ namespace Benchmarks
         private const string DoesntContainLong = "Just for the record. On Windows / VS2017 / i7-6700K 4GHz there is NO difference between two versions. It takes 0.6s for both cases. If number of iterations in the external loop is increased 10 times the execution time increases 10 times too to 6s in both cases.";
         private const string DoesContainLong = @"Just for the record. On Windows / VS2017 / i7-6700K 4GHz there is NO difference between two versions. It takes 0.6s for both cases. <a href=""https://www.amazon.com/dp/B0792K2BK6/"">If number of iterations</a> in the external loop is increased 10 times the execution time increases 10 times too to 6s in both cases.";
         private const string _amazonReplace = @"href=""https://mydomain.com/amzn/click/$1/$2"" rel=""nofollow noreferrer""";
+        private readonly static MatchEvaluator _amazonReplaceEvaluator = m => @"href=""https://mydomain.com/amzn/click/" + m.Groups[1].Value + "/" + m.Groups[2].Value + @""" rel=""nofollow noreferrer""";
         private static readonly Regex _amazonLink = new Regex(
             @"href=""" + // href part
             @"(?:https?:)?//(?:www\.)?(?:amazon|amzn)\.(com|co.uk|de|fr|es|it)/" + // valid domains we allow
@@ -63,8 +60,38 @@ namespace Benchmarks
 
         private string SanityReplace(string safeHtml)
         {
-            if (!safeHtml.Contains("amazon") && !safeHtml.Contains("amzn")) return DoesntContainLong;
+            if (!safeHtml.Contains("am")) return safeHtml;
+            if (!safeHtml.Contains("amazon") && !safeHtml.Contains("amzn")) return safeHtml;
             return _amazonLink.Replace(safeHtml, _amazonReplace);
         }
+
+        // Sanity + Replace
+        [Benchmark(Description = "Sanity+ReplaceEval: ContainsShort")]
+        public string SanityReplaceEvalContainsShort() => SanityReplaceEval(DoesContainShort);
+        [Benchmark(Description = "Sanity+ReplaceEval: ContainsLong")]
+        public string SanityReplaceEvalContainsLong() => SanityReplaceEval(DoesContainLong);
+        [Benchmark(Description = "Sanity+ReplaceEval: NoContainsShort")]
+        public string SanityReplaceEvalNoContainsShort() => SanityReplaceEval(DoesntContainShort);
+        [Benchmark(Description = "Sanity+ReplaceEval: NoContainsLong")]
+        public string SanityReplaceEvalNoContainsLong() => SanityReplaceEval(DoesntContainLong);
+
+        private string SanityReplaceEval(string safeHtml)
+        {
+            if (!safeHtml.Contains("am")) return safeHtml;
+            if (!safeHtml.Contains("amazon") && !safeHtml.Contains("amzn")) return safeHtml;
+            return _amazonLink.Replace(safeHtml, _amazonReplaceEvaluator);
+        }
+
+        // Replace
+        [Benchmark(Description = "ReplaceEval: ContainsShort")]
+        public string ReplaceEvalContainsShort() => ReplaceEval(DoesContainShort);
+        [Benchmark(Description = "ReplaceEval: ContainsLong")]
+        public string ReplaceEvalContainsLong() => ReplaceEval(DoesContainLong);
+        [Benchmark(Description = "ReplaceEval: NoContainsShort")]
+        public string ReplaceEvalNoContainsShort() => ReplaceEval(DoesntContainShort);
+        [Benchmark(Description = "EeplaceEval: NoContainsLong")]
+        public string ReplaceEvalNoContainsLong() => ReplaceEval(DoesntContainLong);
+
+        private string ReplaceEval(string safeHtml) => _amazonLink.Replace(safeHtml, _amazonReplaceEvaluator);
     }
 }
