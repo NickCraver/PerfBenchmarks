@@ -34,5 +34,17 @@ namespace Benchmarks
              where item.Length < 3
              select item).Consume(consumer);
         }
+
+        [Benchmark(Description = "LINQ (call form)")]
+        public void LINQCallForm()
+        {
+            _items.Where(item => item.Length < 3).Select(item => item).Consume(consumer);
+        }
+
+        [Benchmark(Description = "LINQ (call form optimal)")]
+        public void LINQCallFormOptimal()
+        {
+            _items.Where(item => item.Length < 3).Consume(consumer);
+        }
     }
 }
