@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk" ToolsVersion="15.0">
   <PropertyGroup>
-    <TargetFrameworks>net462;netcoreapp2.1</TargetFrameworks>
+    <TargetFrameworks>net462;netcoreapp2.2</TargetFrameworks>
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
