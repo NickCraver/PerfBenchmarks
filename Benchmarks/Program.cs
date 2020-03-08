@@ -1,5 +1,6 @@
 ﻿using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
+using BenchmarkDotNet.Environments;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Running;
 using System;
@@ -44,9 +45,9 @@ namespace Benchmarks
     {
         public Config()
         {
-            Add(new MemoryDiagnoser());
-            Add(Job.Clr);
-            Add(Job.Core);
+            Add(MemoryDiagnoser.Default);
+            Add(Job.Default.With(ClrRuntime.Net472));
+            Add(Job.Default.With(CoreRuntime.Core31));
             //Add(new InliningDiagnoser());
         }
     }
