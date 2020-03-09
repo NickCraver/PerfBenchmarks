@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <LangVersion>Latest</LangVersion>
+  </PropertyGroup>
+</Project>
