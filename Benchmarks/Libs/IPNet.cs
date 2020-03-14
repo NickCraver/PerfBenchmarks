@@ -144,7 +144,7 @@ namespace Benchmarks.Libs
             var slashPos = span.IndexOf('/');
             if (slashPos > -1)
             {
-                if (byte.TryParse(span.Slice(slashPos + 1), out var cidr))
+                if (ByteUtil.TryParse(span.Slice(slashPos + 1), out var cidr))
                 {
                     return Parse(span.Slice(0, slashPos), cidr);
                 }
