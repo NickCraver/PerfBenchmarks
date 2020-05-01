@@ -46,7 +46,7 @@ namespace Benchmarks
         public Config()
         {
             Add(MemoryDiagnoser.Default);
-            Add(Job.Default.With(ClrRuntime.Net472));
+            //Add(Job.Default.With(ClrRuntime.Net472));
             Add(Job.Default.With(CoreRuntime.Core31));
             //Add(new InliningDiagnoser());
         }

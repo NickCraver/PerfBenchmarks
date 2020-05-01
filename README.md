@@ -6,11 +6,11 @@ To run any class of benchmark, all that's needed is the class name of the benchm
 ```
 dotner build
 cd Benchmarks
-dotnet run -c Release --framework netcoreapp2.1 -- Regex
+dotnet run -c Release --framework netcoreapp3.1 -- Regex
 ```
 Without the `-- Regex` argument, a list will be presented like this:
 ```
-λ dotnet run -c Release --framework netcoreapp2.1
+λ dotnet run -c Release --framework netcoreapp3.1
 Please, select benchmark, list of available:
 Allocation
 Conditional
@@ -35,4 +35,4 @@ So that others may benefit, I've created a repo to maintain here, rather than on
 
 If you have any questions, I'm usually available in realtime at [@Nick_Craver](https://twitter.com/Nick_Craver)
 
-Note: The repo uses the new Visual Studio 2017 minimal `.csproj` format.
+Note: The repo uses the new Visual Studio 2019 minimal `.csproj` format.
