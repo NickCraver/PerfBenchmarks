@@ -11,7 +11,9 @@
     <PackageReference Include="IPNetwork2" Version="2.4.0.187" />
     <PackageReference Include="Jil" Version="3.0.0-alpha2" />
     <PackageReference Include="LanguageDetection.NETStandard" Version="1.3.1" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="3.1.4" />
     <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
     <PackageReference Include="StackExchange.Exceptional.Shared" Version="2.1.0" />
+    <PackageReference Include="System.Runtime.Caching" Version="4.7.0" />
   </ItemGroup>
 </Project>
