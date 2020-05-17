@@ -56,21 +56,14 @@ namespace Benchmarks.Libs
         public bool TryGetValue(string key, out object result)
         {
             _ = key ?? throw new ArgumentNullException(nameof(key));
-
-            if (_entries.TryGetValue(key, out CacheEntry entry))
+            // Don't remove the invalid entry live, let the process clean it up
+            if (_entries.TryGetValue(key, out CacheEntry entry) && !entry.IsExpired())
             {
-                if (entry.IsExpired())
-                {
-                    // TODO: For efficiency queue this up for batch removal
-                    RemoveEntry(key, entry);
-                }
-                else
-                {
-                    entry.AccessCount++;
-                    result = entry.Value;
-                    return true;
-                }
+                entry.AccessCount++;
+                result = entry.Value;
+                return true;
             }
+
             result = null;
             return false;
         }
