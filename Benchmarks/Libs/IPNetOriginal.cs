@@ -22,7 +22,9 @@ namespace Benchmarks.Libs
                     ? "IPv6"
                     : "";
 
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006:Naming Styles", Justification = "Because.")]
         private TinyIPAddress? _tinyIPAddress { get; set; }
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE1006:Naming Styles", Justification = "Because.")]
         private TinyIPAddress? _tinySubnet { get; set; }
 
         internal TinyIPAddress TIPAddress =>

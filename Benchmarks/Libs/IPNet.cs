@@ -615,8 +615,9 @@ namespace Benchmarks.Libs
                 return hash;
             }
 
-            public bool Equals(TinyIPAddress other) =>
-                IPv4Address == other.IPv4Address
+            public bool Equals(TinyIPAddress? other) =>
+                other is TinyIPAddress
+                && IPv4Address == other.IPv4Address
                 && FirstV6Leg == other.FirstV6Leg
                 && LastV6Leg == other.LastV6Leg;
 
@@ -629,10 +630,14 @@ namespace Benchmarks.Libs
                 return obj is TinyIPAddress tinyIPAddress && Equals(tinyIPAddress);
             }
 
-            public int CompareTo(TinyIPAddress other) => Compare(this, other);
+            public int CompareTo(TinyIPAddress? other) => Compare(this, other);
 
-            private static int Compare(TinyIPAddress a, TinyIPAddress b)
+            private static int Compare(TinyIPAddress a, TinyIPAddress? b)
             {
+                if (b is null)
+                {
+                    return -1;
+                }
                 if (a.IsV4 && b.IsV4)
                 {
                     return a.IPv4Address.CompareTo(b.IPv4Address);
