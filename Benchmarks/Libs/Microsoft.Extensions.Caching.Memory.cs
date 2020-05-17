@@ -50,51 +50,7 @@ namespace Benchmarks.Libs
 
         private ICollection<KeyValuePair<string, CacheEntry>> EntriesCollection => _entries;
 
-        private void SetEntry(string key, CacheEntry entry)
-        {
-            if (_entries.TryGetValue(key, out CacheEntry priorEntry))
-            {
-                priorEntry.SetExpired(EvictionReason.Replaced);
-            }
-
-            if (!entry.CheckExpired())
-            {
-                bool entryAdded;
-                if (priorEntry == null)
-                {
-                    // Try to add the new entry if no previous entries exist.
-                    entryAdded = _entries.TryAdd(key, entry);
-                }
-                else
-                {
-                    // Try to update with the new entry if a previous entries exist.
-                    entryAdded = _entries.TryUpdate(key, entry, priorEntry);
-
-                    if (!entryAdded)
-                    {
-                        // The update will fail if the previous entry was removed after retrival.
-                        // Adding the new entry will succeed only if no entry has been added since.
-                        // This guarantees removing an old entry does not prevent adding a new entry.
-                        entryAdded = _entries.TryAdd(key, entry);
-                    }
-                }
-
-                if (!entryAdded)
-                {
-                    entry.SetExpired(EvictionReason.Replaced);
-                }
-            }
-            else
-            {
-                if (priorEntry != null)
-                {
-                    RemoveEntry(key, priorEntry);
-                }
-            }
-
-            // TODO: Threadpool background cache purging
-            //StartScanForExpiredItems();
-        }
+        private void SetEntry(string key, CacheEntry entry) => _entries[key] = entry;
 
         /// <inheritdoc />
         public bool TryGetValue(string key, out object result)
@@ -103,10 +59,7 @@ namespace Benchmarks.Libs
 
             if (_entries.TryGetValue(key, out CacheEntry entry))
             {
-                // Check if expired due to expiration tokens, timers, etc. and if so, remove it.
-                // Allow a stale Replaced value to be returned due to concurrent calls to SetExpired during SetEntry.
-
-                if (entry.CheckExpired() && entry.EvictionReason != EvictionReason.Replaced)
+                if (entry.IsExpired())
                 {
                     // TODO: For efficiency queue this up for batch removal
                     RemoveEntry(key, entry);
@@ -129,7 +82,7 @@ namespace Benchmarks.Libs
 
             if (_entries.TryRemove(key, out CacheEntry entry))
             {
-                entry.SetExpired(EvictionReason.Removed);
+                entry.SetExpired();
             }
 
             StartScanForExpiredItems();
@@ -156,7 +109,7 @@ namespace Benchmarks.Libs
             var now = DateTime.UtcNow;
             foreach (var pair in cache._entries)
             {
-                if (pair.Value.CheckExpired(now))
+                if (pair.Value.IsExpired(now))
                 {
                     cache.RemoveEntry(pair.Key, pair.Value);
                 }
@@ -173,7 +126,6 @@ namespace Benchmarks.Libs
                 {
                     GC.SuppressFinalize(this);
                 }
-
                 _disposed = true;
             }
         }
@@ -182,11 +134,7 @@ namespace Benchmarks.Libs
         public TItem Set<TItem>(string key, TItem value, DateTime absoluteExpiration)
         {
             _ = key ?? throw new ArgumentNullException(nameof(key));
-            var entry = new CacheEntry
-            {
-                AbsoluteExpiration = absoluteExpiration,
-                Value = value,
-            };
+            var entry = new CacheEntry(value, absoluteExpiration);
             SetEntry(key, entry);
 
             return value;
@@ -198,31 +146,23 @@ namespace Benchmarks.Libs
 
     public class CacheEntry
     {
-        public object Value { get; internal set; }
-        public DateTime AbsoluteExpiration { get; internal set; }
+        public object Value { get; }
+        public DateTime AbsoluteExpiration { get; }
         internal int AccessCount;
-        internal EvictionReason EvictionReason { get; private set; }
         private bool _isExpired;
 
-        internal CacheEntry() { }
+        internal CacheEntry(object value, DateTime absoluteExpiration) =>
+            (Value, AbsoluteExpiration) = (value, absoluteExpiration);
 
-        internal bool CheckExpired() => _isExpired || CheckForExpiredTime(DateTime.UtcNow);
-        internal bool CheckExpired(DateTime now) => _isExpired || CheckForExpiredTime(now);
-
-        internal void SetExpired(EvictionReason reason)
-        {
-            if (EvictionReason == EvictionReason.None)
-            {
-                EvictionReason = reason;
-            }
-            _isExpired = true;
-        }
+        internal void SetExpired() => _isExpired = true;
+        internal bool IsExpired() => _isExpired || CheckForExpiredTime(DateTime.UtcNow);
+        internal bool IsExpired(DateTime now) => _isExpired || CheckForExpiredTime(now);
 
         private bool CheckForExpiredTime(DateTime now)
         {
             if (AbsoluteExpiration <= now)
             {
-                SetExpired(EvictionReason.Expired);
+                SetExpired();
                 return true;
             }
             return false;
@@ -237,30 +177,5 @@ namespace Benchmarks.Libs
         public TimeSpan ExpirationScanFrequency { get; set; } = TimeSpan.FromMinutes(2);
 
         MemoryCacheOptions IOptions<MemoryCacheOptions>.Value => this;
-    }
-
-    public enum EvictionReason : byte
-    {
-        None,
-
-        /// <summary>
-        /// Manually
-        /// </summary>
-        Removed,
-
-        /// <summary>
-        /// Overwritten
-        /// </summary>
-        Replaced,
-
-        /// <summary>
-        /// Timed out
-        /// </summary>
-        Expired,/*
-
-        /// <summary>
-        /// Overflow
-        /// </summary>
-        Capacity,*/
     }
 }
