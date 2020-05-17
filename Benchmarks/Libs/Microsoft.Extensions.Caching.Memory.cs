@@ -99,10 +99,9 @@ namespace Benchmarks.Libs
 
         private static void ScanForExpiredItems(MemoryCache cache)
         {
-            var now = DateTime.UtcNow;
             foreach (var pair in cache._entries)
             {
-                if (pair.Value.IsExpired(now))
+                if (pair.Value.IsExpired())
                 {
                     cache.RemoveEntry(pair.Key, pair.Value);
                 }
@@ -144,12 +143,16 @@ namespace Benchmarks.Libs
         internal int AccessCount;
         private bool _isExpired;
 
+        private static DateTime _currentDateIsh = DateTime.UtcNow;
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0052:Remove unread private members", Justification = "Timer yo.")]
+        private static readonly Timer ExpirationTimeUpdater =
+            new Timer(state => _currentDateIsh = DateTime.UtcNow, null, 1000, 1000);
+
         internal CacheEntry(object value, DateTime absoluteExpiration) =>
             (Value, AbsoluteExpiration) = (value, absoluteExpiration);
 
         internal void SetExpired() => _isExpired = true;
-        internal bool IsExpired() => _isExpired || CheckForExpiredTime(DateTime.UtcNow);
-        internal bool IsExpired(DateTime now) => _isExpired || CheckForExpiredTime(now);
+        internal bool IsExpired() => _isExpired || CheckForExpiredTime(_currentDateIsh);
 
         private bool CheckForExpiredTime(DateTime now)
         {
