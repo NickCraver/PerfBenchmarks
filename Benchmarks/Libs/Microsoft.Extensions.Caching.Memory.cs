@@ -4,13 +4,13 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Options;
 
 namespace Benchmarks.Libs
 {
@@ -22,7 +22,7 @@ namespace Benchmarks.Libs
     {
         static MemoryCache()
         {
-            if (Unsafe.SizeOf<DateTime>() > IntPtr.Size)
+            if (sizeof(long) > IntPtr.Size)
                 throw new PlatformNotSupportedException("ECMA-335 §I.12.6.2 only guarantees not to tear things up to the word size; assertion failed");
         }
         private readonly ConcurrentDictionary<string, CacheEntry> _entries;
@@ -142,23 +142,27 @@ namespace Benchmarks.Libs
             => TryGetValue(key, out object value) ? (TItem)value : default;
     }
 
-    public class CacheEntry
+    public sealed class CacheEntry
     {
+        private long _absoluteExpirationTicks;
+        private int _accessCount;
+        private readonly uint _slidingSeconds;
         public object Value { get; }
-        public DateTime AbsoluteExpiration { get; private set; }
-        internal int AccessCount { get; private set; }
-        private uint slidingSeconds;
 
-        private static DateTime _currentDateIsh = DateTime.UtcNow;
+        public int AccessCount => Volatile.Read(ref _accessCount);
+        public DateTime AbsoluteExpiration => new DateTime(_absoluteExpirationTicks, DateTimeKind.Utc);
+
+        private static long _currentDateIshTicks = DateTime.UtcNow.Ticks;
         [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0052:Remove unread private members", Justification = "Timer yo.")]
         private static readonly Timer ExpirationTimeUpdater =
-            new Timer(state => _currentDateIsh = DateTime.UtcNow, null, 1000, 1000);
+            new Timer(state => _currentDateIshTicks = DateTime.UtcNow.Ticks, null, 1000, 1000);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal CacheEntry(object value, DateTime absoluteExpiration)
         {
             Value = value;
-            AbsoluteExpiration = absoluteExpiration;
+            if (absoluteExpiration.Kind == DateTimeKind.Local) absoluteExpiration = absoluteExpiration.ToUniversalTime();
+            _absoluteExpirationTicks = absoluteExpiration.Ticks;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -166,16 +170,16 @@ namespace Benchmarks.Libs
         {
             if (slidingExpiration > TimeSpan.Zero)
             {
-                slidingSeconds = slidingExpiration.TotalSeconds >= uint.MaxValue
+                _slidingSeconds = slidingExpiration.TotalSeconds >= uint.MaxValue
                     ? uint.MaxValue : (uint)slidingExpiration.TotalSeconds;
             }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsExpired() => AbsoluteExpiration <= _currentDateIsh;
+        internal bool IsExpired() => _absoluteExpirationTicks <= _currentDateIshTicks;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetExpired() => AbsoluteExpiration = _currentDateIsh;
+        internal void SetExpired() => _absoluteExpirationTicks = _currentDateIshTicks;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryGet(out object value)
@@ -183,9 +187,9 @@ namespace Benchmarks.Libs
             value = Value;
             if (IsExpired()) return false;
 
-            AccessCount++; // not concerned about losing occasional values due to threading
-            var slide = slidingSeconds;
-            if (slide != 0) AbsoluteExpiration = _currentDateIsh.AddSeconds(slide);
+            _accessCount++; // not concerned about losing occasional values due to threading
+            var slide = _slidingSeconds;
+            if (slide != 0) _absoluteExpirationTicks = _currentDateIshTicks + (slide * TimeSpan.TicksPerSecond);
             return true;
         }
     }
