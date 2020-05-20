@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Options;
@@ -19,6 +20,11 @@ namespace Benchmarks.Libs
     /// </summary>
     public class MemoryCache
     {
+        static MemoryCache()
+        {
+            if (Unsafe.SizeOf<DateTime>() > IntPtr.Size)
+                throw new PlatformNotSupportedException("ECMA-335 §I.12.6.2 only guarantees not to tear things up to the word size; assertion failed");
+        }
         private readonly ConcurrentDictionary<string, CacheEntry> _entries;
         private bool _disposed;
 
@@ -53,17 +59,14 @@ namespace Benchmarks.Libs
         private void SetEntry(string key, CacheEntry entry) => _entries[key] = entry;
 
         /// <inheritdoc />
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool TryGetValue(string key, out object result)
         {
-            _ = key ?? throw new ArgumentNullException(nameof(key));
             // Don't remove the invalid entry live, let the process clean it up
-            if (_entries.TryGetValue(key, out CacheEntry entry) && !entry.IsExpired())
+            if (_entries.TryGetValue(key, out CacheEntry entry) && entry.TryGet(out result))
             {
-                entry.AccessCount++;
-                result = entry.Value;
                 return true;
             }
-
             result = null;
             return false;
         }
@@ -71,8 +74,6 @@ namespace Benchmarks.Libs
         /// <inheritdoc />
         public void Remove(string key)
         {
-            _ = key ?? throw new ArgumentNullException(nameof(key));
-
             if (_entries.TryRemove(key, out CacheEntry entry))
             {
                 entry.SetExpired();
@@ -122,46 +123,70 @@ namespace Benchmarks.Libs
             }
         }
 
-        // From Extensions
-        public TItem Set<TItem>(string key, TItem value, DateTime absoluteExpiration)
-        {
-            _ = key ?? throw new ArgumentNullException(nameof(key));
-            var entry = new CacheEntry(value, absoluteExpiration);
-            SetEntry(key, entry);
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set<TItem>(string key, TItem value, DateTime absoluteExpiration, TimeSpan slidingExpiration)
+            => SetEntry(key, new CacheEntry(value, absoluteExpiration, slidingExpiration));
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set<TItem>(string key, TItem value, DateTime absoluteExpiration)
+            => SetEntry(key, new CacheEntry(value, absoluteExpiration));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public object Get(string key)
+        {
+            TryGetValue(key, out object value);
             return value;
         }
-
-        public object Get(string key) => TryGetValue(key, out object value) ? value : null;
-        public TItem Get<TItem>(string key) => TryGetValue(key, out object value) ? (TItem)value : default;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public TItem Get<TItem>(string key)
+            => TryGetValue(key, out object value) ? (TItem)value : default;
     }
 
     public class CacheEntry
     {
         public object Value { get; }
-        public DateTime AbsoluteExpiration { get; }
-        internal int AccessCount;
-        private bool _isExpired;
+        public DateTime AbsoluteExpiration { get; private set; }
+        internal int AccessCount { get; private set; }
+        private uint slidingSeconds;
 
         private static DateTime _currentDateIsh = DateTime.UtcNow;
         [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0052:Remove unread private members", Justification = "Timer yo.")]
         private static readonly Timer ExpirationTimeUpdater =
             new Timer(state => _currentDateIsh = DateTime.UtcNow, null, 1000, 1000);
 
-        internal CacheEntry(object value, DateTime absoluteExpiration) =>
-            (Value, AbsoluteExpiration) = (value, absoluteExpiration);
-
-        internal void SetExpired() => _isExpired = true;
-        internal bool IsExpired() => _isExpired || CheckForExpiredTime(_currentDateIsh);
-
-        private bool CheckForExpiredTime(DateTime now)
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal CacheEntry(object value, DateTime absoluteExpiration)
         {
-            if (AbsoluteExpiration <= now)
+            Value = value;
+            AbsoluteExpiration = absoluteExpiration;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal CacheEntry(object value, DateTime absoluteExpiration, TimeSpan slidingExpiration) : this(value, absoluteExpiration)
+        {
+            if (slidingExpiration > TimeSpan.Zero)
             {
-                SetExpired();
-                return true;
+                slidingSeconds = slidingExpiration.TotalSeconds >= uint.MaxValue
+                    ? uint.MaxValue : (uint)slidingExpiration.TotalSeconds;
             }
-            return false;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsExpired() => AbsoluteExpiration <= _currentDateIsh;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal void SetExpired() => AbsoluteExpiration = _currentDateIsh;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool TryGet(out object value)
+        {
+            value = Value;
+            if (IsExpired()) return false;
+
+            AccessCount++; // not concerned about losing occasional values due to threading
+            var slide = slidingSeconds;
+            if (slide != 0) AbsoluteExpiration = _currentDateIsh.AddSeconds(slide);
+            return true;
         }
     }
 
