@@ -72,18 +72,10 @@ namespace Benchmarks.Libs
         }
 
         /// <inheritdoc />
-        public void Remove(string key)
-        {
-            if (_entries.TryRemove(key, out CacheEntry entry))
-            {
-                entry.SetExpired();
-            }
+        public bool Remove(string key) => _entries.TryRemove(key, out _);
 
-            StartScanForExpiredItems();
-        }
-
-        private void RemoveEntry(string key, CacheEntry entry) => 
-            EntriesCollection.Remove(new KeyValuePair<string, CacheEntry>(key, entry));
+        private void RemoveEntry(string key, CacheEntry entry)
+            => EntriesCollection.Remove(new KeyValuePair<string, CacheEntry>(key, entry));
 
         // Called by multiple actions to see how long it's been since we last checked for expired items.
         // If sufficient time has elapsed then a scan is initiated on a background task.
@@ -179,7 +171,7 @@ namespace Benchmarks.Libs
         internal bool IsExpired() => _absoluteExpirationTicks <= _currentDateIshTicks;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal void SetExpired() => _absoluteExpirationTicks = _currentDateIshTicks;
+        internal void SetExpired() => _absoluteExpirationTicks = 0;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal bool TryGet(out object value)
