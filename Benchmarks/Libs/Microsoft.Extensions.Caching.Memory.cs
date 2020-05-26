@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,6 +26,7 @@ namespace Benchmarks.Libs
             if (sizeof(long) > IntPtr.Size)
                 throw new PlatformNotSupportedException("ECMA-335 §I.12.6.2 only guarantees not to tear things up to the word size; assertion failed");
         }
+
         private readonly ConcurrentDictionary<string, CacheEntry> _entries;
         private bool _disposed;
 
@@ -35,14 +37,27 @@ namespace Benchmarks.Libs
         /// Creates a new <see cref="MemoryCache"/> instance.
         /// </summary>
         /// <param name="optionsAccessor">The options of the cache.</param>
-        public MemoryCache(IOptions<MemoryCacheOptions> optionsAccessor)
+        public MemoryCache(IOptions<MemoryCacheOptions> optionsAccessor = null)
         {
-            _ = optionsAccessor ?? throw new ArgumentNullException(nameof(optionsAccessor));
+            optionsAccessor ??= new MemoryCacheOptions();
 
             _options = optionsAccessor.Value;
             _entries = new ConcurrentDictionary<string, CacheEntry>();
             _lastExpirationScan = DateTime.UtcNow;
+
+            var scanEvery = _options.ExpirationScanFrequency;
+            if (scanEvery > TimeSpan.Zero)
+            {
+                _scanEveryTimer = new Timer(state =>
+                {
+                    if (state is WeakReference wr && wr.Target is MemoryCache obj)
+                    {
+                        _ = obj.ScanForExpiredItems();
+                    }
+                }, new WeakReference(this), scanEvery, scanEvery);
+            }
         }
+        private Timer _scanEveryTimer;
 
         /// <summary>
         /// Cleans up the background collection events.
@@ -77,29 +92,42 @@ namespace Benchmarks.Libs
         private void RemoveEntry(string key, CacheEntry entry)
             => EntriesCollection.Remove(new KeyValuePair<string, CacheEntry>(key, entry));
 
-        // Called by multiple actions to see how long it's been since we last checked for expired items.
-        // If sufficient time has elapsed then a scan is initiated on a background task.
-        private void StartScanForExpiredItems()
+        int _scanInProgress;
+
+        internal ValueTask<int> ScanForExpiredItems() // returns: -1 if already running (so: nothing done), else: the number of things removed
         {
-            var now = DateTime.UtcNow;
-            if (_options.ExpirationScanFrequency < now - _lastExpirationScan)
+            return Interlocked.CompareExchange(ref _scanInProgress, 1, 0) == 0 ? Impl(this) : new ValueTask<int>(-1);
+
+            static async ValueTask<int> Impl(MemoryCache obj)
             {
-                _lastExpirationScan = now;
-                Task.Factory.StartNew(state => ScanForExpiredItems((MemoryCache)state), this,
-                    CancellationToken.None, TaskCreationOptions.DenyChildAttach, TaskScheduler.Default);
+                int count = 0, removed = 0;
+                try
+                {
+                    var yieldEvery = obj._options.ExpirationScanYieldEveryItems;
+                    foreach (var pair in obj._entries)
+                    {
+                        if (pair.Value.IsExpired())
+                        {
+                            obj.RemoveEntry(pair.Key, pair.Value);
+                            removed++;
+                        }
+                        if ((++count % yieldEvery) == 0)
+                            await Task.Yield();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine(ex.Message);
+                }
+                finally
+                {
+                    Interlocked.CompareExchange(ref obj._scanInProgress, 0, 1);
+                }
+                return removed;
             }
         }
 
-        private static void ScanForExpiredItems(MemoryCache cache)
-        {
-            foreach (var pair in cache._entries)
-            {
-                if (pair.Value.IsExpired())
-                {
-                    cache.RemoveEntry(pair.Key, pair.Value);
-                }
-            }
-        }
+
 
         public void Dispose() => Dispose(true);
 
@@ -110,6 +138,10 @@ namespace Benchmarks.Libs
                 if (disposing)
                 {
                     GC.SuppressFinalize(this);
+
+                    try { _scanEveryTimer?.Dispose(); }
+                    catch { }
+                    _scanEveryTimer = null;
                 }
                 _disposed = true;
             }
@@ -132,6 +164,8 @@ namespace Benchmarks.Libs
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TItem Get<TItem>(string key)
             => TryGetValue(key, out object value) ? (TItem)value : default;
+
+        internal void Clear() => _entries.Clear();
     }
 
     public sealed class CacheEntry
@@ -192,6 +226,7 @@ namespace Benchmarks.Libs
         /// Gets or sets the minimum length of time between successive scans for expired items.
         /// </summary>
         public TimeSpan ExpirationScanFrequency { get; set; } = TimeSpan.FromMinutes(2);
+        public int ExpirationScanYieldEveryItems { get; set; } = 100000;
 
         MemoryCacheOptions IOptions<MemoryCacheOptions>.Value => this;
     }
