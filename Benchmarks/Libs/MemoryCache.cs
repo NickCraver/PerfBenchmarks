@@ -6,6 +6,7 @@
 
 using Microsoft.Extensions.Options;
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -13,13 +14,13 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Benchmarks.Libs
+namespace StackRedis.Internal
 {
     /// <summary>
     /// An implementation of <see cref="IMemoryCache"/> using a dictionary to
     /// store its entries.
     /// </summary>
-    public class MemoryCache
+    public sealed class MemoryCache : IEnumerable<KeyValuePair<string, CacheEntry>>
     {
         static MemoryCache()
         {
@@ -28,10 +29,11 @@ namespace Benchmarks.Libs
         }
 
         private readonly ConcurrentDictionary<string, CacheEntry> _entries;
-        private bool _disposed;
+        private volatile bool _disposed;
 
         private readonly MemoryCacheOptions _options;
-        private DateTime _lastExpirationScan;
+        private long _lastExpirationScan;
+        public DateTime LastExpirationScan => new DateTime(_lastExpirationScan, DateTimeKind.Utc);
 
         /// <summary>
         /// Creates a new <see cref="MemoryCache"/> instance.
@@ -43,7 +45,7 @@ namespace Benchmarks.Libs
 
             _options = optionsAccessor.Value;
             _entries = new ConcurrentDictionary<string, CacheEntry>();
-            _lastExpirationScan = DateTime.UtcNow;
+            _lastExpirationScan = CacheEntry.CurrentDateIshTicks;
 
             var scanEvery = _options.ExpirationScanFrequency;
             if (scanEvery > TimeSpan.Zero)
@@ -96,11 +98,12 @@ namespace Benchmarks.Libs
 
         internal ValueTask<int> ScanForExpiredItems() // returns: -1 if already running (so: nothing done), else: the number of things removed
         {
-            return Interlocked.CompareExchange(ref _scanInProgress, 1, 0) == 0 ? Impl(this) : new ValueTask<int>(-1);
+            return !_disposed && Interlocked.CompareExchange(ref _scanInProgress, 1, 0) == 0 ? Impl(this) : new ValueTask<int>(-1);
 
             static async ValueTask<int> Impl(MemoryCache obj)
             {
                 int count = 0, removed = 0;
+                obj._lastExpirationScan = CacheEntry.CurrentDateIshTicks;
                 try
                 {
                     var yieldEvery = obj._options.ExpirationScanYieldEveryItems;
@@ -112,7 +115,10 @@ namespace Benchmarks.Libs
                             removed++;
                         }
                         if ((++count % yieldEvery) == 0)
+                        {
                             await Task.Yield();
+                            if (obj._disposed) break;
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -131,10 +137,11 @@ namespace Benchmarks.Libs
 
         public void Dispose() => Dispose(true);
 
-        protected virtual void Dispose(bool disposing)
+        private void Dispose(bool disposing)
         {
             if (!_disposed)
             {
+                _disposed = true;
                 if (disposing)
                 {
                     GC.SuppressFinalize(this);
@@ -143,7 +150,6 @@ namespace Benchmarks.Libs
                     catch { }
                     _scanEveryTimer = null;
                 }
-                _disposed = true;
             }
         }
 
@@ -156,16 +162,47 @@ namespace Benchmarks.Libs
             => SetEntry(key, new CacheEntry(value, absoluteExpiration));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set<TItem>(string key, TItem value, TimeSpan absoluteExpiration, TimeSpan slidingExpiration)
+            => SetEntry(key, new CacheEntry(value, absoluteExpiration, slidingExpiration));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Set<TItem>(string key, TItem value, TimeSpan absoluteExpiration)
+            => SetEntry(key, new CacheEntry(value, absoluteExpiration));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public object Get(string key)
         {
             TryGetValue(key, out object value);
             return value;
         }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public TItem Get<TItem>(string key)
             => TryGetValue(key, out object value) ? (TItem)value : default;
 
         internal void Clear() => _entries.Clear();
+
+        public bool Rename(string from, string to)
+        {
+            if (from == to) return false;
+            if (_entries.TryGetValue(from, out CacheEntry entry) && !entry.IsExpired())
+            {
+                _entries[to] = entry;
+                RemoveEntry(from, entry);
+            }
+            return false;
+        }
+
+        public IEnumerator<KeyValuePair<string, CacheEntry>> GetEnumerator()
+        {
+            foreach (var pair in _entries)
+            {
+                if (!pair.Value.IsExpired())
+                    yield return pair;
+            }
+        }
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
     }
 
     public sealed class CacheEntry
@@ -178,31 +215,69 @@ namespace Benchmarks.Libs
         public int AccessCount => Volatile.Read(ref _accessCount);
         public DateTime AbsoluteExpiration => new DateTime(_absoluteExpirationTicks, DateTimeKind.Utc);
 
-        private static long _currentDateIshTicks = DateTime.UtcNow.Ticks;
+        private static long s_currentDateIshTicks = DateTime.UtcNow.Ticks;
         [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0052:Remove unread private members", Justification = "Timer yo.")]
         private static readonly Timer ExpirationTimeUpdater =
-            new Timer(state => _currentDateIshTicks = DateTime.UtcNow.Ticks, null, 1000, 1000);
+            new Timer(state => s_currentDateIshTicks = DateTime.UtcNow.Ticks, null, 1000, 1000);
+
+        internal static long CurrentDateIshTicks
+        {
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            get => s_currentDateIshTicks;
+        }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal CacheEntry(object value, DateTime absoluteExpiration)
         {
             Value = value;
-            if (absoluteExpiration.Kind == DateTimeKind.Local) absoluteExpiration = absoluteExpiration.ToUniversalTime();
-            _absoluteExpirationTicks = absoluteExpiration.Ticks;
+            _absoluteExpirationTicks = GetTicks(absoluteExpiration);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal CacheEntry(object value, DateTime absoluteExpiration, TimeSpan slidingExpiration) : this(value, absoluteExpiration)
+        internal CacheEntry(object value, TimeSpan absoluteExpiration)
         {
-            if (slidingExpiration > TimeSpan.Zero)
-            {
-                _slidingSeconds = slidingExpiration.TotalSeconds >= uint.MaxValue
-                    ? uint.MaxValue : (uint)slidingExpiration.TotalSeconds;
-            }
+            Value = value;
+            _absoluteExpirationTicks = GetTicks(absoluteExpiration);
+        }
+
+        private static long GetTicks(DateTime expiration)
+        {
+            if (expiration == DateTime.MaxValue) return long.MaxValue;
+            if (expiration.Kind == DateTimeKind.Local) expiration = expiration.ToUniversalTime();
+            if (expiration == DateTime.MaxValue) return long.MaxValue;
+            return expiration.Ticks;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal bool IsExpired() => _absoluteExpirationTicks <= _currentDateIshTicks;
+        private static long GetTicks(TimeSpan expiration)
+        {
+            if (expiration == TimeSpan.MaxValue) return long.MaxValue;
+            return s_currentDateIshTicks + expiration.Ticks;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal CacheEntry(object value, DateTime absoluteExpiration, TimeSpan slidingExpiration)
+            : this(value, absoluteExpiration)
+            => _slidingSeconds = GetSlidingSeconds(slidingExpiration);
+
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal CacheEntry(object value, TimeSpan absoluteExpiration, TimeSpan slidingExpiration)
+            : this(value, absoluteExpiration)
+            => _slidingSeconds = GetSlidingSeconds(slidingExpiration);
+
+        private uint GetSlidingSeconds(TimeSpan value)
+        {   // note: don't enable sliding if it never expires (expiration == long.MaxValue)
+            if (_absoluteExpirationTicks != long.MaxValue && value > TimeSpan.Zero)
+            {
+                return value.TotalSeconds >= uint.MaxValue
+                    ? uint.MaxValue : (uint)value.TotalSeconds;
+            }
+            return 0;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool IsExpired() => _absoluteExpirationTicks <= s_currentDateIshTicks;
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal void SetExpired() => _absoluteExpirationTicks = 0;
@@ -215,19 +290,8 @@ namespace Benchmarks.Libs
 
             _accessCount++; // not concerned about losing occasional values due to threading
             var slide = _slidingSeconds;
-            if (slide != 0) _absoluteExpirationTicks = _currentDateIshTicks + (slide * TimeSpan.TicksPerSecond);
+            if (slide != 0) _absoluteExpirationTicks = s_currentDateIshTicks + (slide * TimeSpan.TicksPerSecond);
             return true;
         }
-    }
-
-    public class MemoryCacheOptions : IOptions<MemoryCacheOptions>
-    {
-        /// <summary>
-        /// Gets or sets the minimum length of time between successive scans for expired items.
-        /// </summary>
-        public TimeSpan ExpirationScanFrequency { get; set; } = TimeSpan.FromMinutes(2);
-        public int ExpirationScanYieldEveryItems { get; set; } = 100000;
-
-        MemoryCacheOptions IOptions<MemoryCacheOptions>.Value => this;
     }
 }

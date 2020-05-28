@@ -4,7 +4,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using System;
 
-using SlimCache = Benchmarks.Libs.MemoryCache;
+using SlimCache = StackRedis.Internal.MemoryCache;
 using SysCache = System.Runtime.Caching.MemoryCache;
 using ExtCache = Microsoft.Extensions.Caching.Memory.MemoryCache;
 using System.Collections.Concurrent;
@@ -22,10 +22,10 @@ namespace Benchmarks
                                 DictMd = new ConcurrentDictionary<string, object>(),
                                 DictLg = new ConcurrentDictionary<string, object>();
 
-        public static SlimCache SlimCacheEmpty = new SlimCache(new Libs.MemoryCacheOptions()),
-                                SlimCacheSm = new SlimCache(new Libs.MemoryCacheOptions()),
-                                SlimCacheMd = new SlimCache(new Libs.MemoryCacheOptions()),
-                                SlimCacheLg = new SlimCache(new Libs.MemoryCacheOptions());
+        public static SlimCache SlimCacheEmpty = new SlimCache(),
+                                SlimCacheSm = new SlimCache(),
+                                SlimCacheMd = new SlimCache(),
+                                SlimCacheLg = new SlimCache();
 
         public static SysCache SysCacheEmpty = new SysCache("Empty"),
                                SysCacheSm = new SysCache("Small"),
@@ -37,7 +37,7 @@ namespace Benchmarks
                                ExtCacheMd = new ExtCache(Options.Create(new MemoryCacheOptions())),
                                ExtCacheLg = new ExtCache(Options.Create(new MemoryCacheOptions()));
         public static DateTimeOffset Expires { get; } = DateTime.UtcNow.AddDays(7);
-        public static DateTime ExpiresDt { get; } = DateTime.UtcNow.AddDays(7);
+        public static TimeSpan ExpiresTs { get; } = TimeSpan.FromDays(7);
 
         static MemoryCacheTests()
         {
@@ -45,7 +45,7 @@ namespace Benchmarks
             {
                 var val = i.ToString();
                 DictSm[val] = val;
-                SlimCacheSm.Set(val, val, ExpiresDt);
+                SlimCacheSm.Set(val, val, ExpiresTs);
                 SysCacheSm.Add(val, val, Expires);
                 ExtCacheSm.Set(val, val, Expires);
             }
@@ -54,7 +54,7 @@ namespace Benchmarks
             //{
             //    var val = i.ToString();
             //    DictMd[val] = val;
-            //    SlimCacheMd.Set(val, val, ExpiresDt);
+            //    SlimCacheMd.Set(val, val, ExpiresTs);
             //    SysCacheMd.Add(val, val, Expires);
             //    ExtCacheMd.Set(val, val, Expires);
             //}
@@ -63,7 +63,7 @@ namespace Benchmarks
             //{
             //    var val = i.ToString();
             //    DictLg[val] = val;
-            //    SlimCacheLg.Set(val, val, ExpiresDt);
+            //    SlimCacheLg.Set(val, val, ExpiresTs);
             //    SysCacheLg.Add(val, val, Expires);
             //    ExtCacheLg.Set(val, val, Expires);
             //}
@@ -98,7 +98,7 @@ namespace Benchmarks
         //public string SlimGetLg() => (string)SlimCacheLg.Get("12345");
 
         [Benchmark, BenchmarkCategory("Set (string) - Small")]
-        public void SlimSetSm() => SlimCacheSm.Set("1234", "1234", ExpiresDt);
+        public void SlimSetSm() => SlimCacheSm.Set("1234", "1234", ExpiresTs);
 
 
         [Benchmark(Baseline = true), BenchmarkCategory("Get (string) - Small")]

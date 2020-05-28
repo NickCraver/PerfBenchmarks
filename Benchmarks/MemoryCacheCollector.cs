@@ -1,16 +1,17 @@
 ﻿using BenchmarkDotNet.Attributes;
-using Benchmarks.Libs;
 using System;
 using System.Threading.Tasks;
-using SlimCache = Benchmarks.Libs.MemoryCache;
+using SlimCache = StackRedis.Internal.MemoryCache;
 
 namespace Benchmarks
 {
     [Config(typeof(Config))]
     public class MemoryCacheCollectorTests
     {
-        private readonly SlimCache _cache = new SlimCache(new MemoryCacheOptions {
-            ExpirationScanFrequency = TimeSpan.Zero, ExpirationScanYieldEveryItems = 250000 });
+        private readonly SlimCache _cache = new SlimCache(new StackRedis.Internal.MemoryCacheOptions
+        {
+            ExpirationScanFrequency = TimeSpan.Zero, ExpirationScanYieldEveryItems = 250000 }
+        );
 
         public int[] ContentsSizes => new[] { 10_000, 1_000_000, 10_000_000};
         [ParamsSource(nameof(ContentsSizes))]
