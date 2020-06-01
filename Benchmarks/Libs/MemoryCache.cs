@@ -202,13 +202,13 @@ namespace StackRedis.Internal
             }
         }
 
-        public IEnumerable<KeyValuePair<PartitionedKey, CacheEntry>> GetEntries(string partition)
+        public IEnumerable<KeyValuePair<string, CacheEntry>> GetEntries(string partition)
         {
             if (partition == null) throw new ArgumentNullException(nameof(partition));
             foreach (var pair in _entries)
             {
                 if (pair.Key.Partition == partition && !pair.Value.IsExpired())
-                    yield return pair;
+                    yield return new KeyValuePair<string, CacheEntry>(pair.Key.Key, pair.Value);
             }
         }
     }
