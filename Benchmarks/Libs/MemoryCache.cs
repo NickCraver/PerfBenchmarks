@@ -20,15 +20,15 @@ namespace StackRedis.Internal
     /// An implementation of <see cref="IMemoryCache"/> using a dictionary to
     /// store its entries.
     /// </summary>
-    public sealed class MemoryCache : IEnumerable<KeyValuePair<string, CacheEntry>>
+    public sealed class MemoryCache
     {
         static MemoryCache()
         {
             if (sizeof(long) > IntPtr.Size)
-                throw new PlatformNotSupportedException("ECMA-335 §I.12.6.2 only guarantees not to tear things up to the word size; assertion failed");
+                throw new PlatformNotSupportedException("Please use x64 mode. ECMA-335 §I.12.6.2 only guarantees not to tear things up to the word size.");
         }
 
-        private readonly ConcurrentDictionary<string, CacheEntry> _entries;
+        private readonly ConcurrentDictionary<PartitionedKey, CacheEntry> _entries;
         private volatile bool _disposed;
 
         private readonly MemoryCacheOptions _options;
@@ -44,7 +44,7 @@ namespace StackRedis.Internal
             optionsAccessor ??= new MemoryCacheOptions();
 
             _options = optionsAccessor.Value;
-            _entries = new ConcurrentDictionary<string, CacheEntry>();
+            _entries = new ConcurrentDictionary<PartitionedKey, CacheEntry>();
             _lastExpirationScan = CacheEntry.CurrentDateIshTicks;
 
             var scanEvery = _options.ExpirationScanFrequency;
@@ -71,13 +71,13 @@ namespace StackRedis.Internal
         /// </summary>
         public int Count => _entries.Count;
 
-        private ICollection<KeyValuePair<string, CacheEntry>> EntriesCollection => _entries;
+        private ICollection<KeyValuePair<PartitionedKey, CacheEntry>> EntriesCollection => _entries;
 
-        private void SetEntry(string key, CacheEntry entry) => _entries[key] = entry;
+        private void SetEntry(in PartitionedKey key, CacheEntry entry) => _entries[key] = entry;
 
         /// <inheritdoc />
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetValue(string key, out object result)
+        public bool TryGetValue(in PartitionedKey key, out object result)
         {
             // Don't remove the invalid entry live, let the process clean it up
             if (_entries.TryGetValue(key, out CacheEntry entry) && entry.TryGet(out result))
@@ -89,10 +89,10 @@ namespace StackRedis.Internal
         }
 
         /// <inheritdoc />
-        public bool Remove(string key) => _entries.TryRemove(key, out _);
+        public bool Remove(in PartitionedKey key) => _entries.TryRemove(key, out _);
 
-        private void RemoveEntry(string key, CacheEntry entry)
-            => EntriesCollection.Remove(new KeyValuePair<string, CacheEntry>(key, entry));
+        private void RemoveEntry(in PartitionedKey key, CacheEntry entry)
+            => EntriesCollection.Remove(new KeyValuePair<PartitionedKey, CacheEntry>(key, entry));
 
         int _scanInProgress;
 
@@ -154,35 +154,35 @@ namespace StackRedis.Internal
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Set<TItem>(string key, TItem value, DateTime absoluteExpiration, TimeSpan slidingExpiration)
+        public void Set<TItem>(PartitionedKey key, TItem value, DateTime absoluteExpiration, TimeSpan slidingExpiration)
             => SetEntry(key, new CacheEntry(value, absoluteExpiration, slidingExpiration));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Set<TItem>(string key, TItem value, DateTime absoluteExpiration)
+        public void Set<TItem>(PartitionedKey key, TItem value, DateTime absoluteExpiration)
             => SetEntry(key, new CacheEntry(value, absoluteExpiration));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Set<TItem>(string key, TItem value, TimeSpan absoluteExpiration, TimeSpan slidingExpiration)
+        public void Set<TItem>(PartitionedKey key, TItem value, TimeSpan absoluteExpiration, TimeSpan slidingExpiration)
             => SetEntry(key, new CacheEntry(value, absoluteExpiration, slidingExpiration));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Set<TItem>(string key, TItem value, TimeSpan absoluteExpiration)
+        public void Set<TItem>(PartitionedKey key, TItem value, TimeSpan absoluteExpiration)
             => SetEntry(key, new CacheEntry(value, absoluteExpiration));
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public object Get(string key)
+        public object Get(PartitionedKey key)
         {
             TryGetValue(key, out object value);
             return value;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public TItem Get<TItem>(string key)
+        public TItem Get<TItem>(PartitionedKey key)
             => TryGetValue(key, out object value) ? (TItem)value : default;
 
         internal void Clear() => _entries.Clear();
 
-        public bool Rename(string from, string to)
+        public bool Rename(PartitionedKey from, PartitionedKey to)
         {
             if (from == to) return false;
             if (_entries.TryGetValue(from, out CacheEntry entry) && !entry.IsExpired())
@@ -193,7 +193,7 @@ namespace StackRedis.Internal
             return false;
         }
 
-        public IEnumerator<KeyValuePair<string, CacheEntry>> GetEnumerator()
+        public IEnumerable<KeyValuePair<PartitionedKey, CacheEntry>> GetAllEntries()
         {
             foreach (var pair in _entries)
             {
@@ -202,7 +202,44 @@ namespace StackRedis.Internal
             }
         }
 
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        public IEnumerable<KeyValuePair<PartitionedKey, CacheEntry>> GetEntries(string partition)
+        {
+            if (partition == null) throw new ArgumentNullException(nameof(partition));
+            foreach (var pair in _entries)
+            {
+                if (pair.Key.Partition == partition && !pair.Value.IsExpired())
+                    yield return pair;
+            }
+        }
+    }
+
+    public readonly struct PartitionedKey : IEquatable<PartitionedKey>
+    {
+        public PartitionedKey(string key, string partition = "")
+        {
+            if (key == null) ThrowNullKey();
+            Partition = partition ?? "";
+            Key = key;
+            static void ThrowNullKey() => throw new ArgumentNullException(nameof(key));
+        }
+
+        public string Partition { get; }
+        public string Key { get; }
+
+        /// <inheritdoc/>
+        public override bool Equals(object obj) => obj is PartitionedKey typed && Equals(in typed);
+        /// <inheritdoc/>
+        public override string ToString() => Partition + Key;
+        /// <inheritdoc/>
+        public override int GetHashCode()
+            => Key == null  ? 0 : (Partition.GetHashCode() ^ Key.GetHashCode());
+        public bool Equals(in PartitionedKey other) => Partition == other.Partition && Key == other.Key;
+        bool IEquatable<PartitionedKey>.Equals(PartitionedKey other) => Partition == other.Partition && Key == other.Key;
+
+        public static bool operator == (in PartitionedKey x, in PartitionedKey y) => x.Partition == y.Partition && x.Key == y.Key;
+        public static bool operator != (in PartitionedKey x, in PartitionedKey y) => x.Partition != y.Partition || x.Key != y.Key;
+
+        public static implicit operator PartitionedKey(string key) => new PartitionedKey(key, null);
     }
 
     public sealed class CacheEntry
@@ -248,7 +285,6 @@ namespace StackRedis.Internal
             return expiration.Ticks;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private static long GetTicks(TimeSpan expiration)
         {
             if (expiration == TimeSpan.MaxValue) return long.MaxValue;
