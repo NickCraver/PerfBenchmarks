@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Options;
 using System;
 
-namespace StackRedis.Internal
+namespace StackRedis
 {
     public sealed class MemoryCacheOptions : IOptions<MemoryCacheOptions>
     {

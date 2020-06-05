@@ -1,14 +1,15 @@
 ﻿using BenchmarkDotNet.Attributes;
+using StackRedis;
 using System;
 using System.Threading.Tasks;
-using SlimCache = StackRedis.Internal.MemoryCache;
+using SlimCache = StackRedis.MemoryCache;
 
 namespace Benchmarks
 {
     [Config(typeof(Config))]
     public class MemoryCacheCollectorTests
     {
-        private readonly SlimCache _cache = new SlimCache(new StackRedis.Internal.MemoryCacheOptions
+        private readonly SlimCache _cache = new SlimCache(new StackRedis.MemoryCacheOptions
         {
             ExpirationScanFrequency = TimeSpan.Zero, ExpirationScanYieldEveryItems = 250000 }
         );
@@ -28,7 +29,7 @@ namespace Benchmarks
             for (int i = 0; i < n; i++)
             {
                 var expiry = future;
-                _cache.Set("key" + i, el, expiry);
+                _cache.Set(new PartitionedKey("key" + i), el, expiry);
             }
 
         }
