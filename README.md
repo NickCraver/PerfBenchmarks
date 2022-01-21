@@ -6,7 +6,7 @@ To run any class of benchmark, all that's needed is the class name of the benchm
 ```
 dotner build
 cd Benchmarks
-dotnet run -c Release --framework netcoreapp3.1 -- Regex
+dotnet run -c Release --framework net6.0 -- Regex
 ```
 Without the `-- Regex` argument, a list will be presented like this:
 ```
