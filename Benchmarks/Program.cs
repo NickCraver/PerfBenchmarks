@@ -34,7 +34,6 @@ namespace Benchmarks
                     .ToList()
                     .ForEach(Console.WriteLine);
                 Console.WriteLine("All");
-                return;
             }
 
             BenchmarkRunner.Run(benchmarks[args[0]]);
@@ -45,9 +44,9 @@ namespace Benchmarks
     {
         public Config()
         {
-            Add(MemoryDiagnoser.Default);
-            //Add(Job.Default.With(ClrRuntime.Net472));
-            Add(Job.Default.With(CoreRuntime.Core31));
+            AddDiagnoser(MemoryDiagnoser.Default);
+            AddJob(Job.Default.WithRuntime(CoreRuntime.Core60));
+            AddJob(Job.Default.WithRuntime(ClrRuntime.Net472));
             //Add(new InliningDiagnoser());
         }
     }
